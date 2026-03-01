@@ -88,7 +88,7 @@ Foxtrick.parseXML = function(data) {
 		var xml = null;
 
 		try {
-			var parser = new window.DOMParser();
+			var parser = new DOMParser();
 			xml = parser.parseFromString(text, 'text/xml');
 		}
 		catch (e) {
@@ -191,7 +191,7 @@ Foxtrick.fetch = function(url, params) {
 		try {
 			let type = params ? 'POST' : 'GET';
 
-			let req = new window.XMLHttpRequest();
+			let req = new XMLHttpRequest();
 			req.open(type, pUrl, true);
 
 			if (typeof req.overrideMimeType === 'function')
@@ -556,9 +556,38 @@ if (!Foxtrick.util)
 Foxtrick.util.load = {};
 
 /**
- * Load an internal URL synchronously
+ * Load an internal URL asynchronously using the Fetch API.
  *
- * TODO: consider going full async
+ * Returns a Promise that resolves with the text content or null on failure.
+ * Use this in MV3 service workers (sync XHR not allowed there).
+ *
+ * @param  {string} url
+ * @return {Promise<string|null>}
+ */
+Foxtrick.util.load.text = function(url) {
+	if (url.replace(/^\s+/, '').indexOf(Foxtrick.InternalPath) !== 0) {
+		Foxtrick.log('load.text only for internal resources.', url, "isn't, only",
+		             Foxtrick.InternalPath, 'is');
+		return Promise.resolve(null);
+	}
+	return fetch(url)
+		.then(function(response) {
+			if (response.ok)
+				return response.text();
+			Foxtrick.log('load.text: cannot load:', url, response.status);
+			return null;
+		})
+		.catch(function(e) {
+			Foxtrick.log('load.text: cannot find or load:', url, e);
+			return null;
+		});
+};
+
+/**
+ * Load an internal URL synchronously.
+ *
+ * Only valid in content script and legacy background page contexts.
+ * Use load.text() in MV3 service workers (sync XHR not available there).
  *
  * @param  {string} url
  * @return {string}
@@ -572,7 +601,7 @@ Foxtrick.util.load.sync = function(url) {
 	}
 
 	// load
-	let req = new window.XMLHttpRequest();
+	let req = new XMLHttpRequest();
 
 	req.open('GET', url, false); // sync load of a chrome resource
 

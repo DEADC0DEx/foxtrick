@@ -864,69 +864,62 @@ Foxtrick.L10n.getCountryNameLocal = function(leagueId, lang) {
 			screenshotsDefault: null,
 			screenshots: null,
 
+			/**
+			 * @return {Promise<void>}
+			 */
 			init: function() {
+				var self = this;
 				var L10N_BUNDLE_PATH = Foxtrick.InternalPath + 'foxtrick.properties';
 
 				// var SS_BUNDLE_PATH = Foxtrick.InternalPath + 'foxtrick.screenshots';
 				var L10N_PATH = Foxtrick.InternalPath + 'locale/';
 
-				// get htlang.json for each locale
-				if (!/\/preferences\.html$/.test(window.location.pathname)) {
-					// don't run in prefs
-					// unnecessary and hurts performance
-					for (let locale of Foxtrick.L10n.locales) {
-						let url = L10N_PATH + locale + '/htlang.json';
-						let text = Foxtrick.util.load.sync(url);
-						this.htLanguagesJSON[locale] = JSON.parse(text);
-					}
-				}
-
-				var propsDefault = Foxtrick.util.load.sync(L10N_BUNDLE_PATH);
-				this.propertiesDefault = this.__parse(propsDefault);
-
-				// this.screenshotsDefault = Foxtrick.util.load.sync(SS_BUNDLE_PATH);
-				try {
-					let rule = this._getString(this.propertiesDefault, 'pluralFormRuleID');
-					this.plFormDefault = parseInt(rule.match(/\d+/), 10);
-				}
-				catch (e) {}
+				// Check if running in preferences page (window not available in service workers)
+				var isPrefsPage = typeof window !== 'undefined' &&
+					/\/preferences\.html$/.test(window.location.pathname);
 
 				var localeCode = Foxtrick.Prefs.getString('htLanguage');
-
 				var l10nBundlePath = L10N_PATH + localeCode + '/foxtrick.properties';
-				try {
-					let props = Foxtrick.util.load.sync(l10nBundlePath);
-					if (props === null) {
+
+				// Load htlang.json for each locale (skip in prefs page for performance)
+				var htLangPromises = isPrefsPage ? [] : Foxtrick.L10n.locales.map(function(locale) {
+					var url = L10N_PATH + locale + '/htlang.json';
+					return Foxtrick.util.load.text(url).then(function(text) {
+						return { locale: locale, data: text ? JSON.parse(text) : {} };
+					});
+				});
+
+				return Promise.all([
+					Foxtrick.util.load.text(L10N_BUNDLE_PATH),
+					Foxtrick.util.load.text(l10nBundlePath),
+					Promise.all(htLangPromises),
+				]).then(function([propsDefault, propsLocale, htLangResults]) {
+					self.propertiesDefault = self.__parse(propsDefault);
+
+					// this.screenshotsDefault = Foxtrick.util.load.sync(SS_BUNDLE_PATH);
+					try {
+						let rule = self._getString(self.propertiesDefault, 'pluralFormRuleID');
+						self.plFormDefault = parseInt(rule.match(/\d+/), 10);
+					}
+					catch (e) {}
+
+					if (propsLocale === null) {
 						Foxtrick.log('Use default properties for locale', localeCode);
-						this.properties = this.propertiesDefault;
+						self.properties = self.propertiesDefault;
 					}
 					else {
-						this.properties = this.__parse(props);
+						self.properties = self.__parse(propsLocale);
 					}
-				}
-				catch (e) {
-					Foxtrick.log('Use default properties for locale', localeCode);
-					this.properties = this.propertiesDefault;
-				}
 
-				try {
-					let localRule = this._getString(this.properties, 'pluralFormRuleID');
-					this.plForm = parseInt(localRule.match(/\d+/), 10);
-				}
-				catch (e) {}
+					try {
+						let localRule = self._getString(self.properties, 'pluralFormRuleID');
+						self.plForm = parseInt(localRule.match(/\d+/), 10);
+					}
+					catch (e) {}
 
-				// var ssBundlePath = L10N_PATH + localeCode + '/foxtrick.screenshots';
-				// try {
-				// 	this.screenshots = Foxtrick.util.load.sync(ssBundlePath);
-				// 	if (this.screenshots === null) {
-				// 		Foxtrick.log('Use default screenshots for locale', localeCode);
-				// 		this.screenshots = this.screenshotsDefault;
-				// 	}
-				// }
-				// catch (ee) {
-				// 	Foxtrick.log('Use default screenshots for locale', localeCode);
-				// 	this.screenshots = this.screenshotsDefault;
-				// }
+					for (let { locale, data } of htLangResults)
+						self.htLanguagesJSON[locale] = data;
+				});
 			},
 
 			__parse: function(props) {
