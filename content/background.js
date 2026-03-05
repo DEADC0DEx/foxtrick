@@ -56,7 +56,7 @@ Foxtrick.loader.background.browserUnload = function() {
 
 
 // background script starter load function
-Foxtrick.loader.background.browserLoad = function() {
+Foxtrick.loader.background.browserLoad = async function() {
 	try {
 
 		Foxtrick.log('Foxtrick.loader.background.browserLoad');
@@ -67,9 +67,9 @@ Foxtrick.loader.background.browserLoad = function() {
 		/** @type {Record<string, string>} */
 		var htLanguagesJSONText;
 
-		let updateResources = function(reInit) {
-			// init resources
-			Foxtrick.entry.init(reInit);
+		let updateResources = async function(reInit) {
+			// init resources (now returns a Promise)
+			await Foxtrick.entry.init(reInit);
 
 			// prepare resources for later transmission to content script
 			currencyJSON = JSON.stringify(Foxtrick.XMLData.htCurrencyJSON);
@@ -80,21 +80,24 @@ Foxtrick.loader.background.browserLoad = function() {
 			for (let [lang, obj] of Object.entries(Foxtrick.L10n.htLanguagesJSON))
 				htLanguagesJSONText[lang] = JSON.stringify(obj);
 
-			cssTextCollection = Foxtrick.util.css.getCssTextCollection();
+			// Use async CSS collection (fetch-based) for MV3 service workers
+			cssTextCollection = await Foxtrick.util.css.getCssTextCollectionAsync();
 
 			Foxtrick.Prefs.deleteValue('preferences.updated');
 		};
 
-		updateResources();
+		await updateResources();
 		Foxtrick.Prefs.setBool('featureHighlight', false);
 		Foxtrick.Prefs.setBool('translationKeys', false);
 
 		// calls module.onLoad() after the extension is loaded
+		// document is not available in MV3 service workers
+		let bgDoc = typeof document !== 'undefined' ? document : null;
 		for (let module of Object.values(Foxtrick.modules)) {
 			let m = /** @type {FTBackgroundModuleMixin} */ (module);
 			if (typeof m.onLoad === 'function') {
 				try {
-					m.onLoad(document);
+					m.onLoad(bgDoc);
 				}
 				catch (e) {
 					Foxtrick.log('Error caught in module', m.MODULE_NAME, ':', e);
@@ -116,45 +119,54 @@ Foxtrick.loader.background.browserLoad = function() {
 		this.requests.pageLoad = function(request, sender, sendResponse) {
 			// access user setting directly here, since getBool uses a copy
 			// which needs updating just here
-			if (Foxtrick.arch == 'Sandboxed' && localStorage.getItem('preferences.updated')	||
+			let needsUpdate =
+				Foxtrick.arch == 'Sandboxed' && Foxtrick.Prefs.getBool('preferences.updated') ||
 				Foxtrick.platform == 'Android' &&
-				Foxtrick.Prefs._prefs_gecko.getBoolPref('preferences.updated')) {
+				Foxtrick.Prefs._prefs_gecko.getBoolPref('preferences.updated');
 
-				// reInit
-				updateResources(true);
-			}
+			let doSend = function() {
+				let [prefsChromeDefault, prefsChromeUser] = Foxtrick.Prefs.clone();
 
-			let [prefsChromeDefault, prefsChromeUser] = Foxtrick.Prefs.clone();
+				/** @type {FT.ResourceDict} */
+				let resource = {
+					prefsChromeUser,
+					prefsChromeDefault,
 
-			/** @type {FT.ResourceDict} */
-			let resource = {
-				prefsChromeUser,
-				prefsChromeDefault,
+					htLangJSON: htLanguagesJSONText,
 
-				htLangJSON: htLanguagesJSONText,
+					propertiesDefault: Foxtrick.L10n.propertiesDefault,
+					properties: Foxtrick.L10n.properties,
+					screenshotsDefault: Foxtrick.L10n.screenshotsDefault,
+					screenshots: Foxtrick.L10n.screenshots,
 
-				propertiesDefault: Foxtrick.L10n.propertiesDefault,
-				properties: Foxtrick.L10n.properties,
-				screenshotsDefault: Foxtrick.L10n.screenshotsDefault,
-				screenshots: Foxtrick.L10n.screenshots,
+					plForm: Foxtrick.L10n.plForm,
+					plFormDefault: Foxtrick.L10n.plFormDefault,
 
-				plForm: Foxtrick.L10n.plForm,
-				plFormDefault: Foxtrick.L10n.plFormDefault,
+					currencyJSON,
+					aboutJSON,
+					worldDetailsJSON,
 
-				currencyJSON,
-				aboutJSON,
-				worldDetailsJSON,
+					league: Foxtrick.XMLData.League,
+					countryToLeague: Foxtrick.XMLData.countryToLeague,
+				};
 
-				league: Foxtrick.XMLData.League,
-				countryToLeague: Foxtrick.XMLData.countryToLeague,
+				if (request.req == 'pageLoad') {
+					Foxtrick.modules.UI.update(sender.tab);
+					resource.cssText = cssTextCollection;
+				}
+
+				sendResponse(resource);
 			};
 
-			if (request.req == 'pageLoad') {
-				Foxtrick.modules.UI.update(sender.tab);
-				resource.cssText = cssTextCollection;
+			if (needsUpdate) {
+				// reInit async, then send
+				updateResources(true).then(doSend).catch(Foxtrick.catch('pageLoad updateResources'));
+			}
+			else {
+				doSend();
 			}
 
-			sendResponse(resource);
+			return true; // async
 		};
 
 		// Fennec tab child processes
@@ -188,8 +200,13 @@ Foxtrick.loader.background.browserLoad = function() {
 			try {
 				Foxtrick.Prefs.restore();
 
-				if (Foxtrick.platform !== 'Android')
-					updateResources();
+				if (Foxtrick.platform !== 'Android') {
+					updateResources().then(() => sendResponse()).catch(e => {
+						Foxtrick.log(e);
+						sendResponse();
+					});
+					return true; // async
+				}
 
 				sendResponse();
 			}
@@ -201,8 +218,11 @@ Foxtrick.loader.background.browserLoad = function() {
 		// from misc.js. getting files, convert text
 		this.requests.getCss = function({ files }, sender, sendResponse) {
 			// @param files - an array of files to be loaded into string
-			let cssText = Foxtrick.util.css.getCssFileArrayToString(files);
-			sendResponse({ cssText });
+			// Use async version for MV3 service workers (fetch-based)
+			Foxtrick.util.css.getCssFileArrayToStringAsync(files)
+				.then(cssText => sendResponse({ cssText }))
+				.catch(() => sendResponse({ cssText: '' }));
+			return true; // async
 		};
 
 		// TODO
@@ -219,36 +239,51 @@ Foxtrick.loader.background.browserLoad = function() {
 		// };
 
 		this.requests.getDataUrl = function({ url }, sender, sendResponse) {
-			let replaceImage = function(url) {
-				let image = new Image();
-				image.onload = function() {
-					let canvas = document.createElement('canvas');
-					canvas.width = image.width;
-					canvas.height = image.height;
-					let context = canvas.getContext('2d');
-					context.drawImage(image, 0, 0);
-					let dataUrl = canvas.toDataURL();
-					Foxtrick.dataUrlStorage[url] = dataUrl;
-					return sendResponse({ url: dataUrl });
-				};
-				image.onerror = function() {
-					return sendResponse({ url: '' });
-				};
-				image.src = url;
-			};
-
 			let dataUrl = Foxtrick.dataUrlStorage[url];
-			if (dataUrl)
+			if (dataUrl) {
 				sendResponse({ url: dataUrl });
-			else
-				replaceImage(url);
+				return true;
+			}
+
+			// Use fetch + OffscreenCanvas (available in MV3 service workers)
+			fetch(url)
+				.then(response => response.blob())
+				.then(blob => createImageBitmap(blob))
+				.then(imageBitmap => {
+					let canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+					let ctx = canvas.getContext('2d');
+					ctx.drawImage(imageBitmap, 0, 0);
+					return canvas.convertToBlob();
+				})
+				.then(blob => new Promise((resolve) => {
+					let reader = new FileReader();
+					reader.onload = () => resolve(/** @type {string} */ (reader.result));
+					reader.readAsDataURL(blob);
+				}))
+				.then(dataUrl => {
+					Foxtrick.dataUrlStorage[url] = /** @type {string} */ (dataUrl);
+					sendResponse({ url: dataUrl });
+				})
+				.catch(() => sendResponse({ url: '' }));
 
 			return true; // async
 		};
 
 		this.requests.playSound = function({ url }) {
-			// @param url - the URL of new tab to create
-			Foxtrick.playSound(url);
+			// Use chrome.offscreen API for audio in MV3 service workers
+			const OFFSCREEN_URL = chrome.runtime.getURL('content/offscreen.html');
+			chrome.offscreen.hasDocument().then(hasDoc => {
+				if (hasDoc)
+					return Promise.resolve();
+
+				return chrome.offscreen.createDocument({
+					url: OFFSCREEN_URL,
+					reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+					justification: 'Playing sound notifications',
+				});
+			}).then(() => {
+				chrome.runtime.sendMessage({ req: 'playSound', url });
+			}).catch(Foxtrick.catch('playSound'));
 		};
 
 		// from misc.js: tabs
@@ -409,6 +444,30 @@ Foxtrick.loader.background.browserLoad = function() {
 		this.requests.getDebugLog = function(request, sender, sendResponse) {
 			// @callback_param log - contains the debug log storage
 			sendResponse({ log: Foxtrick.debugLogStorage });
+		};
+
+		// for popup.js (MV3: popup can no longer access background globals directly)
+		this.requests.popupInit = function(request, sender, sendResponse) {
+			sendResponse({
+				disableTemporary: Foxtrick.Prefs.getBool('disableTemporary'),
+				featureHighlight: Foxtrick.Prefs.getBool('featureHighlight'),
+				translationKeys: Foxtrick.Prefs.getBool('translationKeys'),
+				strings: {
+					'toolbar.disableTemporary': Foxtrick.L10n.getString('toolbar.disableTemporary'),
+					'toolbar.featureHighlight': Foxtrick.L10n.getString('toolbar.featureHighlight'),
+					'toolbar.translationKeys': Foxtrick.L10n.getString('toolbar.translationKeys'),
+					'toolbar.preferences': Foxtrick.L10n.getString('toolbar.preferences'),
+					'link.homepage': Foxtrick.L10n.getString('link.homepage'),
+					'changes.support': Foxtrick.L10n.getString('changes.support'),
+					'api.clearCache': Foxtrick.L10n.getString('api.clearCache'),
+					'api.clearCache.title': Foxtrick.L10n.getString('api.clearCache.title'),
+				},
+			});
+		};
+
+		// for popup.js clearCache button
+		this.requests.clearCaches = function() {
+			Foxtrick.clearCaches();
 		};
 
 		// from mobile-enhancements.js

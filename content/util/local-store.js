@@ -183,7 +183,7 @@ if (Foxtrick.context == 'background') {
 		/** @type {Promise<IDBStore>} */
 		const STORE_PROMISE = new Promise(function(fulfill, reject) {
 
-			if (indexedDB !== null) {
+			if (typeof indexedDB !== 'undefined' && indexedDB !== null) {
 
 				/** @type {IDBStore} */
 				// @ts-ignore
@@ -200,8 +200,9 @@ if (Foxtrick.context == 'background') {
 				});
 
 			}
-			else if (window.localStorage) {
+			else if (typeof window !== 'undefined' && window.localStorage) {
 
+				// Fallback for non-IDB environments (not available in MV3 service workers)
 				Promise.resolve(getIDBShim()).then(fulfill);
 
 			}

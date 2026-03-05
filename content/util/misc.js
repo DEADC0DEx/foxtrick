@@ -567,7 +567,7 @@ Foxtrick.alert = function(msg) {
  * @return {string}
  */
 Foxtrick.encodeBase64 = function(str) {
-	return window.btoa(unescape(encodeURIComponent(str)));
+	return btoa(unescape(encodeURIComponent(str)));
 };
 
 /**
@@ -576,7 +576,7 @@ Foxtrick.encodeBase64 = function(str) {
  */
 Foxtrick.decodeBase64 = function(str) {
 	try {
-		return decodeURIComponent(escape(window.atob(str)));
+		return decodeURIComponent(escape(atob(str)));
 	}
 	catch (e) {
 		Foxtrick.log('Error decoding base64 encoded string', str, e);

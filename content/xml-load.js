@@ -33,31 +33,35 @@ Foxtrick.XMLData = {
 
 	/**
 	 * @param {boolean} _ reInit
+	 * @return {Promise<void>}
 	 */
 	init: function(_) {
 		var module = this;
 
-		var currency = Foxtrick.util.load.sync(Foxtrick.InternalPath + 'data/htcurrency.json');
-		module.htCurrencyJSON = JSON.parse(currency);
-		var about = Foxtrick.util.load.sync(Foxtrick.InternalPath + 'data/foxtrick_about.json');
-		module.aboutJSON = JSON.parse(about);
-		var world = Foxtrick.util.load.sync(Foxtrick.InternalPath + 'data/worlddetails.json');
-		module.worldDetailsJSON = JSON.parse(world);
+		return Promise.all([
+			Foxtrick.util.load.text(Foxtrick.InternalPath + 'data/htcurrency.json'),
+			Foxtrick.util.load.text(Foxtrick.InternalPath + 'data/foxtrick_about.json'),
+			Foxtrick.util.load.text(Foxtrick.InternalPath + 'data/worlddetails.json'),
+		]).then(function([currency, about, world]) {
+			module.htCurrencyJSON = JSON.parse(currency);
+			module.aboutJSON = JSON.parse(about);
+			module.worldDetailsJSON = JSON.parse(world);
 
-		if (!module.worldDetailsJSON) {
-			Foxtrick.log(new Error('loading world failed'));
-			return;
-		}
-
-		var leagueList = module.worldDetailsJSON.HattrickData.LeagueList;
-		Foxtrick.forEach(function(league) {
-			let leagueId = parseInt(league.LeagueID, 10);
-			module.League[leagueId] = league;
-			if (league.Country.CountryID) {
-				let countryId = parseInt(league.Country.CountryID, 10);
-				module.countryToLeague[countryId] = leagueId;
+			if (!module.worldDetailsJSON) {
+				Foxtrick.log(new Error('loading world failed'));
+				return;
 			}
-		}, leagueList);
+
+			var leagueList = module.worldDetailsJSON.HattrickData.LeagueList;
+			Foxtrick.forEach(function(league) {
+				let leagueId = parseInt(league.LeagueID, 10);
+				module.League[leagueId] = league;
+				if (league.Country.CountryID) {
+					let countryId = parseInt(league.Country.CountryID, 10);
+					module.countryToLeague[countryId] = leagueId;
+				}
+			}, leagueList);
+		});
 	},
 
 	/**

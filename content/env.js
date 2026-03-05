@@ -393,15 +393,21 @@ Foxtrick.lazyProp = function(obj, prop, calc) {
 		Foxtrick.DataPath = chrome.runtime.getURL('res/');
 
 		// to tell which context the chrome script is running at
-		// either background page, or content script
+		// either background service worker, or content script
 		Foxtrick.lazyProp(Foxtrick, 'context', function() {
 			var ret;
 			try {
-				var protocol = window.location.protocol;
-				if (protocol === 'chrome-extension:' || protocol === 'moz-extension:')
+				// In MV3 service workers, window is undefined
+				if (typeof window === 'undefined') {
 					ret = 'background';
-				else
-					ret = 'content';
+				}
+				else {
+					var protocol = window.location.protocol;
+					if (protocol === 'chrome-extension:' || protocol === 'moz-extension:')
+						ret = 'background';
+					else
+						ret = 'content';
+				}
 			}
 			catch (e) {
 				ret = 'content';
@@ -432,8 +438,9 @@ Foxtrick.lazyProp = function(obj, prop, calc) {
 			return handler; // (request, sender, sendResponse) => bool
 		};
 
+		// MV3: getBackgroundPage() is removed; service workers are not pages
 		Foxtrick.SB.ext.getBackgroundPage = function() {
-			return chrome.extension.getBackgroundPage();
+			return null;
 		};
 		Foxtrick.SB.ext.getURL = function(path) {
 			return chrome.runtime.getURL(path);

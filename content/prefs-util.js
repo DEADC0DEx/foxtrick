@@ -575,10 +575,7 @@ Foxtrick.Prefs.restore = function() {
 		this.clear();
 
 		if (Foxtrick.context === 'background') {
-			for (let i in localStorage) {
-				if (i.indexOf('localStore.') !== 0 && this.isPrefSetting(i))
-					localStorage.removeItem(i);
-			}
+			// MV3: localStorage is not available in service workers; prefs are in chrome.storage.local
 			chrome.storage.local.clear();
 		}
 		else {
@@ -905,66 +902,46 @@ Foxtrick.Prefs.translationKeys = function(sender) {
 		if (Foxtrick.context == 'background') {
 
 			var prefsBG = {
+				/**
+				 * Load default preferences from files and user prefs from chrome.storage.
+				 * Returns a Promise that resolves when all prefs are loaded.
+				 * @return {Promise<void>}
+				 */
 				init: function() {
-					// get preferences
-					// this is used when loading from options page, not valid
-					// in content script since access to localStorage is forbidden
-					try {
-						// user preferences
-						prefs._prefsChromeUser = {};
+					prefs._prefsChromeUser = {};
+					prefs._prefsChromeDefault = {};
 
-						var length = localStorage.length;
-						for (let i = 0; i < length; ++i) {
-							let key = localStorage.key(i);
-
-							// we don't want our localStore to get passed to pages
-							// on every page load
-							// those values are accessed async with Foxtrick.localStore
-							if (key.indexOf('localStore') === 0)
-								continue;
-
-							let value = localStorage.getItem(key);
-
-							try {
-								prefs._prefsChromeUser[key] = JSON.parse(value);
-							}
-							catch (e) {
-								Foxtrick.log('Preference parse error: key:', key, 'value:', value);
-							}
-						}
-
-						prefs._prefsChromeDefault = {};
-
-						var parsePrefsFile = (url) => {
-							let string = Foxtrick.util.load.sync(Foxtrick.InternalPath + url);
-
-							Foxtrick.Prefs.parsePrefs(string, (key, value) => {
-								this._prefsChromeDefault[key] = value;
+					var parsePrefsText = (text) => {
+						if (text)
+							Foxtrick.Prefs.parsePrefs(text, (key, value) => {
+								prefs._prefsChromeDefault[key] = value;
 							});
-						};
+					};
 
-						parsePrefsFile('../defaults/preferences/foxtrick.js');
-						if (Foxtrick.platform == 'Chrome')
-							parsePrefsFile('../defaults/preferences/foxtrick.chrome');
-						else if (Foxtrick.platform == 'Safari')
-							parsePrefsFile('../defaults/preferences/foxtrick.safari');
+					var baseUrl = Foxtrick.InternalPath + '../defaults/preferences/';
+					var platformFile = Foxtrick.platform == 'Chrome' ? 'foxtrick.chrome' :
+						Foxtrick.platform == 'Safari' ? 'foxtrick.safari' : null;
 
-					}
-					catch (e) {
-						Foxtrick.log(e);
-					}
+					var defaultsUrls = [baseUrl + 'foxtrick.js'];
+					if (platformFile)
+						defaultsUrls.push(baseUrl + platformFile);
 
-					this.initAsync(prefs._prefsChromeUser);
-				},
+					return Promise.all([
+						// Load default pref files
+						...defaultsUrls.map(url => Foxtrick.util.load.text(url)),
+						// Load user prefs from chrome.storage.local
+						new Promise(function(resolve) {
+							chrome.storage.local.get(null, resolve);
+						}),
+					]).then(function(results) {
+						// Parse default pref files
+						for (let i = 0; i < defaultsUrls.length; i++)
+							parsePrefsText(results[i]);
 
-				initAsync: function(syncStore) {
-					if (Foxtrick.platform === 'Safari')
-						return;
-
-					new Promise(function(resolve) {
-						chrome.storage.local.get(null, resolve);
-					}).then(function(store) {
-						Object.assign(syncStore, store);
+						// Apply user preferences from chrome.storage.local
+						var store = results[defaultsUrls.length];
+						if (store)
+							Object.assign(prefs._prefsChromeUser, store);
 					});
 				},
 
@@ -976,7 +953,6 @@ Foxtrick.Prefs.translationKeys = function(sender) {
 						}
 						else {
 							prefs._prefsChromeUser[key] = value; // not default, set it
-							localStorage.setItem(key, JSON.stringify(value));
 
 							var o = {
 								[key]: value,
@@ -998,7 +974,6 @@ Foxtrick.Prefs.translationKeys = function(sender) {
 
 				deleteValue: function(key) {
 					delete prefs._prefsChromeUser[key];
-					localStorage.removeItem(key);
 					chrome.storage.local.remove(key);
 				},
 

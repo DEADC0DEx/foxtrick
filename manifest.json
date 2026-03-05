@@ -1,19 +1,24 @@
 {
-	"manifest_version": 2,
+	"manifest_version": 3,
 	"web_accessible_resources": [
-		"content/resources/css/*.css",
-		"content/resources/img/*.gif",
-		"content/resources/img/*.png",
-		"content/resources/notes/*.png",
-		"content/resources/personality/*.jpg",
-		"content/resources/skillcolors/*.css",
-		"content/resources/sounds/*.mp3",
-		"content/resources/sounds/*.ogg",
-		"content/resources/sounds/*.wav",
-		"content/preferences.html"
+		{
+			"resources": [
+				"content/resources/css/*.css",
+				"content/resources/img/*.gif",
+				"content/resources/img/*.png",
+				"content/resources/notes/*.png",
+				"content/resources/personality/*.jpg",
+				"content/resources/skillcolors/*.css",
+				"content/resources/sounds/*.mp3",
+				"content/resources/sounds/*.ogg",
+				"content/resources/sounds/*.wav",
+				"content/preferences.html"
+			],
+			"matches": ["<all_urls>"]
+		}
 	],
 	"background": {
-		"page": "content/background.html"
+		"service_worker": "content/background-worker.js"
 	},
 	"content_scripts": [ {
 		"js": [
@@ -281,11 +286,15 @@
 		"contextMenus",
 		"notifications",
 		"clipboardWrite",
+		"offscreen"
+	],
+	"host_permissions": [
 		"*://chpp.hattrick.org/*",
 		"*://*.foxtrick.org/*",
 		"https://www.fantamondi.it/*"
 	],
-	"optional_permissions": [
+	"optional_permissions": [],
+	"optional_host_permissions": [
 		"https://*.hattrick-youthclub.org/*",
 		"http://no9-online.de/*",
 		"http://www.latehome.de/*",
@@ -298,12 +307,12 @@
 		"https://imageshack.us/*",
 		"http://api.openweathermap.org/*"
 	],
-	"page_action": {
+	"action": {
 		"default_icon": "skin/icon-24.png",
 		"default_title": "Foxtrick enabled",
 		"default_popup": "content/popup.html"
 	},
-	"minimum_chrome_version": "73",
+	"minimum_chrome_version": "116",
 	"options_ui" : {
 		"page": "content/preferences.html",
 		"chrome_style": false,

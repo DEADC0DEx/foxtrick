@@ -274,6 +274,27 @@ Foxtrick.util.css.getCssFileArrayToString = function(cssUrls) {
 };
 
 /**
+ * Gets all css from modules.CSS settings asynchronously using fetch().
+ * For use in MV3 service workers.
+ *
+ * @param  {string[]} cssUrls
+ * @return {Promise<string>}
+ */
+Foxtrick.util.css.getCssFileArrayToStringAsync = function(cssUrls) {
+	let promises = cssUrls.map(function(cssUrl) {
+		if (cssUrl && !/{/.test(cssUrl)) {
+			// a resource file - use fetch
+			return Foxtrick.util.load.text(cssUrl)
+				.then(text => text || '')
+				.catch(() => '');
+		}
+		// inline CSS text
+		return Promise.resolve(cssUrl);
+	});
+	return Promise.all(promises).then(parts => parts.join(''));
+};
+
+/**
  * gets all css from modules.CSS settings
  *
  * @return {string}
@@ -284,4 +305,18 @@ Foxtrick.util.css.getCssTextCollection = function() {
 	Foxtrick.log('getCssTextCollection', theme, '-', dir);
 	let files = Foxtrick.util.css.collectModuleCSS();
 	return Foxtrick.util.css.getCssFileArrayToString(files);
+};
+
+/**
+ * Gets all css from modules.CSS settings asynchronously.
+ * For use in MV3 service workers.
+ *
+ * @return {Promise<string>}
+ */
+Foxtrick.util.css.getCssTextCollectionAsync = function() {
+	let theme = Foxtrick.Prefs.getString('theme');
+	let dir = Foxtrick.Prefs.getString('dir');
+	Foxtrick.log('getCssTextCollectionAsync', theme, '-', dir);
+	let files = Foxtrick.util.css.collectModuleCSS();
+	return Foxtrick.util.css.getCssFileArrayToStringAsync(files);
 };

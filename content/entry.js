@@ -120,6 +120,13 @@ Foxtrick.entry.contentScriptInit = function(data) {
  *
  * @param  {boolean} reInit
  */
+/**
+ * Initialize core modules. Returns a Promise that resolves when all core
+ * async initializations (Prefs, L10n, XMLData) are complete.
+ *
+ * @param  {boolean} reInit
+ * @return {Promise<void>}
+ */
 Foxtrick.entry.init = function(reInit) {
 	// Foxtrick.log('Initializing Foxtrick... reInit:', reInit);
 
@@ -129,21 +136,34 @@ Foxtrick.entry.init = function(reInit) {
 
 	/** @type {FTBackgroundModuleMixin[]} */
 	let coreModules = [Foxtrick.Prefs, Foxtrick.L10n, Foxtrick.XMLData];
-	for (let core of coreModules) {
-		if (typeof core.init === 'function')
-			core.init(reInit);
-	}
 
-	let modules = Foxtrick.util.modules.getActive();
-
-	Foxtrick.entry.niceRun(modules, function(m) {
-		if (typeof m.init == 'function')
-			return () => m.init(reInit);
-
-		return null;
+	// Collect Promises from core module inits (they may be async in MV3 SW)
+	let corePromises = coreModules.map(function(core) {
+		if (typeof core.init === 'function') {
+			try {
+				let result = core.init(reInit);
+				return result instanceof Promise ? result : Promise.resolve();
+			}
+			catch (e) {
+				Foxtrick.log('Error in core init:', e);
+				return Promise.resolve();
+			}
+		}
+		return Promise.resolve();
 	});
 
-	// Foxtrick.log('Foxtrick initialization completed.');
+	return Promise.all(corePromises).then(function() {
+		let modules = Foxtrick.util.modules.getActive();
+
+		Foxtrick.entry.niceRun(modules, function(m) {
+			if (typeof m.init == 'function')
+				return () => m.init(reInit);
+
+			return null;
+		});
+
+		// Foxtrick.log('Foxtrick initialization completed.');
+	});
 };
 
 /**
